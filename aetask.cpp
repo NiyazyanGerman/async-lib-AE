@@ -1,8 +1,7 @@
 #include "aetask.h"
 
 
-template<class F>
-AE::AETask::AETask(F &&function)
+std::thread::id AE::AETask::getIdTask() const &
 {
-
+    //d
 }
