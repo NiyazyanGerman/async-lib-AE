@@ -55,7 +55,7 @@ private:
 
 struct CompareTaskByRank {
     bool operator()(const AETask& task_first, const AETask& task_second) const {
-        return task_first.current_rank_task > task_second.current_rank_task;
+        return task_first.current_rank_task < task_second.current_rank_task;
     }
 };
 
