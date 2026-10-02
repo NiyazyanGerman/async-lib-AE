@@ -17,9 +17,15 @@ class AEThreadPool
 public:
    explicit AEThreadPool(int countThreads = std::thread::hardware_concurrency());
 
-    void execTask(AE::AETask& task,AE::AETimer& timer,PriorityRunTask priority);
+    static inline AEThreadPool* instance() {
+        static AEThreadPool pool;
+        return &pool;
+    }
 
-private:
+   void worker_loop();
+   void execTask(AETask &task);
+   ~AEThreadPool();
+   private:
     int countWorkerThread_;
 
     std::thread getThread();
@@ -30,6 +36,8 @@ private:
     std::vector<std::thread> threads;
     void initProcces();
 
+    AE::AEThreadPool* pool;
+  bool stop_pool = false;
 friend class ExecutorPoolTasks;
 
 };

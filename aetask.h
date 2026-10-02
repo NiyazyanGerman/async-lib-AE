@@ -25,6 +25,8 @@ public:
         current_function_object = std::forward<F>(call_function);
     }
 
+    AETask() : current_rank_task(PriorityRunTask::STANDART_PRIORITY) {}
+
     void operator()()
     {
         executeTask();
@@ -41,7 +43,7 @@ private:
     void executeTask()
     {
         if(current_function_object){
-            // Pool(timer,current_function_object,priority)
+            current_function_object();
         }
 
     }

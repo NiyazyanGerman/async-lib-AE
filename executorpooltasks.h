@@ -2,6 +2,8 @@
 #define EXECUTORPOOLTASKS_H
 #include "aetask.h"
 #include<thread>
+#include"aethreadpool.h"
+#include"aetimer.h"
 class ExecutorPoolTasks
 {
     enum class PriorityRunTask
@@ -24,10 +26,16 @@ public:
         delete workerThreads;
     }
 
-    AE::AETask setTask(PriorityRunTask priority = 1);
+    void run(AE::AETask& taskFunc);
+
+
     auto getReturnValueTask();
+
 private:
     int* workerThreads=nullptr;
+    AE::AEThreadPool* pool;
+
+    friend class AE::AEThreadPool;
 };
 
 #endif // EXECUTORPOOLTASKS_H
