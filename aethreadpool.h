@@ -1,11 +1,13 @@
 #ifndef AETHREADPOOL_H
 #define AETHREADPOOL_H
-#include "aetask.h"
-#include <condition_variable>
-#include<queue>
-#include<thread>
-#include"aetimer.h"
 
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
+#include "aetask.h"
+#include "aetimer.h"
 
 namespace AE {
 
@@ -15,34 +17,31 @@ using taskFunc = AE::AETask;
 class AEThreadPool
 {
 public:
-   explicit AEThreadPool(int countThreads = std::thread::hardware_concurrency());
+    explicit AEThreadPool(int countThreads = std::thread::hardware_concurrency());
+    ~AEThreadPool();
 
     static inline AEThreadPool* instance() {
         static AEThreadPool pool;
         return &pool;
     }
 
-   void worker_loop();
-   void execTask(AETask &task);
-   ~AEThreadPool();
-   private:
+    void execTask(AETask &task);
+    void worker_loop();
+
+private:
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::priority_queue<AE::AETask, std::vector<AE::AETask>, AE::CompareTaskByRank> pr_queue_tasks;
+
+    std::vector<std::thread> threads;
     int countWorkerThread_;
 
     std::thread getThread();
-
-    std::condition_variable cv;
-    std::priority_queue<AE::AETask, std::vector<AE::AETask>, AE::CompareTaskByRank> pr_queue_tasks;
-    std::mutex mtx;
-    std::vector<std::thread> threads;
     void initProcces();
 
-    AE::AEThreadPool* pool;
-  bool stop_pool = false;
-friend class ExecutorPoolTasks;
-
+    friend class ExecutorPoolTasks;
 };
 
-}
-
+} // namespace AE
 
 #endif // AETHREADPOOL_H
