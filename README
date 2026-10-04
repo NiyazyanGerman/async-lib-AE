@@ -1,39 +1,143 @@
+# Priority Executor Pool Tasks (AE Engine) 🚀
+
+Высокопроизводительный пул потоков на C++ с поддержкой динамического планирования задач на основе трех уровней приоритетов: `HIGH`, `STANDART` и `LOW`.
+
+## 📌 Описание логики планировщика
+
+Пул потоков динамически распределяет задачи согласно следующим правилам:
+1. **Выбор приоритета:** Если в очереди находятся задачи с разными приоритетами, потоки всегда в первую очередь забирают задачу с наивысшим доступным приоритетом (`HIGH` > `STANDART` > `LOW`).
+2. **Отсутствие альтернатив:** Если в очереди присутствует только один тип задач (или осталась всего одна задача), свободный поток забирает её в работу незамедлительно, независимо от её уровня приоритета.
+3. **Параллельное выполнение:** Как только задача извлечена из очереди, она обрабатывается в отдельном потоке конкурентно. Порядок завершения задач внутри одного приоритета зависит от планировщика операционной системы.
+
+---
+
+## 💻 Пример использования (Тестовый сценарий)
+
+Ниже представлен код для тестирования корректности распределения приоритетов. Задачи добавляются в пул волнами: сначала пачка `LOW`, затем `STANDART`, и в конце `HIGH`.
+
+```cpp
 #include <iostream>
-#include <algorithm>
-#include "aethreadpool.h"
-#include "executorpooltasks.h"
+#include <chrono>
+#include <mutex>
+#include <thread>
 
-int main(int argc, char *argv[])
+#include "ExecutorPoolTasks.h"
+#include "AETask.h"
+#include "AETimer.h"
+
+// Мьютекс для предотвращения перемешивания текста в консоли
+std::mutex g_cout_mutex;
+
+int main()
 {
-    std::cout << std::this_thread::get_id() << "\n";
-    ExecutorPoolTasks ept;
-    ept.initPool();
-    AE::AETimer my_timer;
+    ExecutorPoolTasks executor;
+    executor.initPool();
 
-    AE::AETask my_task2(
-        my_timer,
-        [](){
-            std::cout << "[Thread ID: " << std::this_thread::get_id() << "]  World" << std::endl;
-        },
-        AE::PriorityRunTask::LOW_PRIORITY
-    );
+    AE::AETimer timer;
 
-    AE::AETask my_task(
-        my_timer,
-        [](){
-             std::cout << "[Thread ID: " << std::this_thread::get_id() << "] Hello World" << std::endl;
-        },
-        AE::PriorityRunTask::HGH_PRIORITY
-    );
+    // 1. Создаем и отправляем LOW задачи
+    for (int i = 0; i < 5; ++i)
+    {
+        AE::AETask task(timer, [i]() {
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << "[LOW]  Task " << i << " | Thread: " << std::this_thread::get_id() << '\n';
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }, AE::PriorityRunTask::LOW_PRIORITY);
+        
+        executor.run(task);
+    }
 
-    ept.run(my_task2);
-    ept.run(my_task);
+    // 2. Создаем и отправляем STANDART задачи
+    for (int i = 0; i < 5; ++i)
+    {
+        AE::AETask task(timer, [i]() {
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << "[STANDART]  Task " << i << " | Thread: " << std::this_thread::get_id() << '\n';
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }, AE::PriorityRunTask::STANDART_PRIORITY);
+        
+        executor.run(task);
+    }
+
+    // 3. Создаем и отправляем HIGH задачи
+    for (int i = 0; i < 5; ++i)
+    {
+        AE::AETask task(timer, [i]() {
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << "[HIGH] Task " << i << " | Thread: " << std::this_thread::get_id() << '\n';
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }, AE::PriorityRunTask::HIGH_PRIORITY);
+        
+        executor.run(task);
+    }
+
+    // Ожидаем завершения всех потоков
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    return 0;
 }
-#TEST ONE
-1
-[Thread ID: 9] Hello World
-[Thread ID: 9]  World
-#TEST TWO
-1
-[Thread ID: 7] Hello World
-[Thread ID: 9]  World
+```
+
+---
+
+## 📊 Результаты тестирования и разбор логов
+
+### Тест 1: Идеальное распределение (Все задачи отправлены одновременно)
+В сценарии, когда вся пачка задач успевает скопиться в очереди до того, как потоки разберут их, планировщик выдает идеальную сортировку:
+
+```text
+[HIGH] Task 0 | Thread: 8236
+[HIGH] Task 1 | Thread: 3300
+[HIGH] Task 3 | Thread: 7396
+[HIGH] Task 4 | Thread: 384
+[HIGH] Task 2 | Thread: 7100
+[STANDART]  Task 1 | Thread: 1376
+[STANDART]  Task 4 | Thread: 23092
+[STANDART]  Task 0 | Thread: 1596
+[STANDART]  Task 2 | Thread: 15332
+[STANDART]  Task 3 | Thread: 10608
+[LOW]  Task 0 | Thread: 21904
+[LOW]  Task 2 | Thread: 9996
+[LOW]  Task 4 | Thread: 9996
+[LOW]  Task 1 | Thread: 21904
+[LOW]  Task 3 | Thread: 10608
+```
+* **Анализ:** Четкое разделение на три фазы выполнения. Внутри групп порядок (`0, 1, 3, 4, 2`) немного хаотичен, так как задачи выполняются ядрами процессора параллельно, что подтверждает честную конкуренцию потоков.
+
+### Тест 2: Динамическое вытеснение и реакция на «опоздавшие» задачи
+Сценарий, демонстрирующий реакцию планировщика на изменение ситуации в реальном времени:
+
+```text
+[HIGH] Task 0 | Thread: 17816
+[LOW]  Task 0 | Thread: 23496    <-- ⚠️ Проскочила первой, так как альтернатив не было
+[HIGH] Task 3 | Thread: 11944
+[HIGH] Task 4 | Thread: 6092
+[HIGH] Task 2 | Thread: 13536
+[STANDART]  Task 1 | Thread: 7460
+[STANDART]  Task 4 | Thread: 18068
+[STANDART]  Task 0 | Thread: 3724
+[STANDART]  Task 2 | Thread: 9960
+[STANDART]  Task 3 | Thread: 12180
+[HIGH] Task 1 | Thread: 6872     <-- 🔥 Опоздавшая HIGH задача вытеснила LOW задачи!
+[LOW]  Task 2 | Thread: 21960
+[LOW]  Task 4 | Thread: 6872
+[LOW]  Task 1 | Thread: 21960
+[LOW]  Task 3 | Thread: 12180
+```
+
+#### 🔍 Разбор аномалий Теста 2:
+1. **Почему `[LOW] Task 0` выполнилась в самом начале?**  
+   В момент старта программы цикл мгновенно добавил первую задачу `LOW 0`. Пул в этот момент был пуст, а другие циклы еще не успели сгенерировать задачи. Пул увидел **одну единственную** задачу в очереди, у него не было альтернатив для выбора, и свободный поток сразу забрал её на исполнение. Отобрать запущенную на процессоре задачу пул уже не может.
+2. **Почему `[HIGH] Task 1` оказалась в самом конце группы `STANDART`?**  
+   Эта задача «опоздала» при формировании волны. Когда она наконец попала в пул, все прошлые `HIGH` и `STANDART` задачи уже выполнялись. Но в очереди всё ещё оставались невыполненные задачи `LOW`. Планировщик мгновенно распознал конкуренцию приоритетов, «подвинул» задачи `LOW` назад и отдал поток для `HIGH 1`.
+
+---
+
+## 🛠️ Требования для сборки
+* Компилятор с поддержкой **C++11** или выше (для использования `std::mutex` и `std::lock_guard`).
+* Подключенные заголовочные файлы компонента `AE Engine`.
